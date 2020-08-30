@@ -1,12 +1,11 @@
-
 #include <ESP8266WiFi.h>
 #include <DHTesp.h>
 #include <FirebaseArduino.h>
 #include <WiFiUdp.h>
 #include <NTPClient.h>
-#include "Secrets.h"
-
 #include<time.h>
+
+#include "Secrets.h"
 
 #define UTC_OFFSET -10800
 
@@ -16,17 +15,13 @@
 #define SENSOR2_PORT 2
 
 DHTesp dhts[2];
-int test = 0;
-
-struct tm ts, previous_ts;
+float temps[24];
+int counter[2];
+int error_counter[2];
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", UTC_OFFSET);
-
-float temps[24];
-float hums[24];
-
-int counter[2];
+struct tm ts, previous_ts;
 
 char str_buffer[80];
 
@@ -52,11 +47,14 @@ void setup()
   Serial.print ("IP: ");
   Serial.println(WiFi.localIP());
 
+  // Just connect and do a simple check
   Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
-  test = Firebase.getInt("teste");
+  int test = Firebase.getInt("teste");
+  
   Serial.print ("Test value from FIREBASE (should be 1): ");
   Serial.println(test);
 
+  // Start the time client
   timeClient.begin();
 
   counter[0] = counter[1] = 0;
@@ -69,71 +67,103 @@ tm get_current_date(){
   return *gmtime(&rawtime);
 }
 
-void read_sensor_values(int n){
+void read_sensor_values(int n) {
   if (counter[n] >= COUNTER_LIMIT) return;
   
-  TempAndHumidity v = dhts[n].getTempAndHumidity();
-  if (dhts[n].getStatus() != 0) return;
+  float temperature = dhts[n].getTemperature();
 
-  Serial.print("Read values: ");
-  Serial.println(v.humidity);
-  Serial.println(v.temperature);
-
-  if (counter[n] == 0) {
-    temps[n * 12] = v.temperature;
-    hums[n * 12] = v.humidity;
-    counter[n]++;
+  // Checking for errors
+  if (dhts[n].getStatus() != 0) {
+    Serial.print("Error with sensor: ");
+    Serial.print(n);
+    Serial.print("\t\t");
+    Serial.println(dhts[n].getStatusString());
+    
+    switch(dhts[n].getStatus()) {
+      case DHTesp::ERROR_TIMEOUT: {
+        error_counter[0]++;
+        break;
+      }
+      case DHTesp::ERROR_CHECKSUM: {
+        error_counter[1]++;
+        break;
+      }
+      default: break;
+    }
     return;
   }
-  int added = 0;
-  for (int i = n * 12; i < n * 12 + counter[n]; ++i){
-    if (v.temperature < temps[i]) {
-      for (int j = n * 12 + counter[n]; j > i; --j) {
-        temps[j] = temps[j - 1];
-      }
-      temps[i] = v.temperature;
-      added = 1;
-      break;
-    }
-  }
-  if (!added) temps[n * 12 + counter[n]] = v.temperature;
 
-  added = 0;
-  for (int i = n * 12; i < n * 12 + counter[n]; ++i){
-    if (v.humidity < hums[i]) {
-      for (int j = n * 12 + counter[n]; j > i; --j) {
-        hums[j] = hums[j - 1];
+  Serial.print("Temperature value: \t\t");
+  Serial.println(temperature);
+
+  // Insert using insertion sort
+  if (counter[n] == 0) {
+    temps[n * 12] = temperature;
+    counter[n]++;
+    return;
+  } else {
+    // Insert into the last position by default
+    temps[n * 12 + counter[n]] = temperature; 
+    
+    // Check the correct position
+    for (int i = n * 12; i < n * 12 + counter[n]; ++i) {
+      if (temperature < temps[i]) {
+        // Moving all bigger to new position
+        for (int j = n * 12 + counter[n]; j > i; --j) {
+          temps[j] = temps[j - 1];
+        }
+        temps[i] = temperature;
+        break;
       }
-      hums[i] = v.humidity;
-      added = 1;
-      break;
     }
   }
-  if (!added) hums[n * 12 + counter[n]] = v.humidity;
-  
   counter[n]++;
 }
 
-void saveMedianValues(int n) {
-  if (counter[n] <= 2) return;
-  int mid = n / 2;
+void saveErrorValues() {
   char temp_buffer[80];
-
-  strftime(temp_buffer, 80, "%F/%H/%M", &previous_ts);
-  sprintf(str_buffer, "hum%d/%s", n, temp_buffer);
-  Firebase.setFloat(str_buffer, hums[n * 12 + mid]);
-  Serial.print("Salvando no path ");
-  Serial.print(str_buffer);
-  Serial.print(" o valor ");
-  Serial.println(hums[n * 12 + mid]);
   
+  if (error_counter[0] != 0) {
+    strftime(temp_buffer, 80, "%F/%H/%M", &previous_ts);
+    sprintf(str_buffer, "error_timeout/%s", temp_buffer);
+    Firebase.setInt(str_buffer, error_counter[0]);
+  }
+  if (error_counter[1] != 0) {
+    strftime(temp_buffer, 80, "%F/%H/%M", &previous_ts);
+    sprintf(str_buffer, "error_checksum/%s", temp_buffer);
+    Firebase.setInt(str_buffer, error_counter[1]);
+  }
+}
+
+void saveValues(int n) {
+  char temp_buffer[80];
+  
+  // Getting formated date as YYYY-MM-DD/hh/mm to set the correct path
   strftime(temp_buffer, 80, "%F/%H/%M", &previous_ts);
-  sprintf(str_buffer, "temp%d/%s", n, temp_buffer);
-  Firebase.setFloat(str_buffer, temps[n * 12 + mid]);
+  sprintf(str_buffer, "status/%d/%s", n, temp_buffer);
+  Firebase.setInt(str_buffer, counter[n]);
+  
+  if (counter[n] <= 2) {
+    return;  
+  }
+  
+  float sum = 0;
+  for (int i = 1; i < counter[n] - 1; ++i) {
+    sum += temps[n * 12 + i];
+  }
+  float saved_value = sum / (counter[n] - 2);
+  
+  // Getting formated date as YYYY-MM-DD/hh/mm to set the correct path
+  strftime(temp_buffer, 80, "%F/%H/%M", &previous_ts);
+  sprintf(str_buffer, "temp/%d/%s", n, temp_buffer);
+
+  // set the value as the average ignoring both the lower and higher values
+  Firebase.setFloat(str_buffer, saved_value);
+
   Serial.print("Salvando no path ");
   Serial.print(str_buffer);
   Serial.print(" o valor ");
-  Serial.println(temps[n * 12 + mid]);
+  Serial.println(saved_value);
 }
 
 void print_info(int n) {
@@ -147,28 +177,31 @@ void print_info(int n) {
     Serial.print(" ");
   }
   Serial.println();
-  Serial.print("Humidades: ");
-  for (int i = n * 12 ; i < n * 12 + counter[n]; ++i) {
-    Serial.print(hums[i]);
-    Serial.print(" ");
-  }
-  Serial.println();
 }
 
 void loop() 
 {
+  delay(dhts[0].getMinimumSamplingPeriod());
+  
   ts = get_current_date();
 
+  // If the minute changed, save the values
   if (previous_ts.tm_min != ts.tm_min) {
-    saveMedianValues(0);
-    saveMedianValues(1);
+    saveValues(0);
+    saveValues(1);
+    saveErrorValues();
+
+    // Clear data counter
     counter[0] = counter[1] = 0;
-    
+    error_counter[0] = error_counter[1] = 0;
+
+    // update time
     previous_ts = ts;
-  } else {
-    read_sensor_values(0);
-    read_sensor_values(1);
   }
+  
+  read_sensor_values(0);
+  read_sensor_values(1);
+
   strftime(str_buffer, 80, "%x %X", &ts);
   Serial.println(str_buffer);
   print_info(0);
@@ -176,5 +209,5 @@ void loop()
   print_info(1);
   Serial.println("-----------------------------");
   
-  delay(5000);
+  delay(2000);
 }
