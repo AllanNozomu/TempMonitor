@@ -11,8 +11,8 @@
 
 #define COUNTER_LIMIT 12
 
-#define SENSOR1_PORT 0
-#define SENSOR2_PORT 2
+#define SENSOR1_PORT 2
+#define SENSOR2_PORT 0
 
 DHTesp dhts[2];
 float temps[24];
@@ -28,7 +28,7 @@ char str_buffer[80];
 void setup()
 {
   dhts[0].setup(SENSOR1_PORT, DHTesp::DHT22);
-  dhts[1].setup(SENSOR2_PORT, DHTesp::DHT22);
+//  dhts[1].setup(SENSOR2_PORT, DHTesp::DHT22);
 
   Serial.begin(115200);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -188,7 +188,7 @@ void loop()
   // If the minute changed, save the values
   if (previous_ts.tm_min != ts.tm_min) {
     saveValues(0);
-    saveValues(1);
+//    saveValues(1);
     saveErrorValues();
 
     // Clear data counter
@@ -200,7 +200,7 @@ void loop()
   }
   
   read_sensor_values(0);
-  read_sensor_values(1);
+//  read_sensor_values(1);
 
   strftime(str_buffer, 80, "%x %X", &ts);
   Serial.println(str_buffer);
