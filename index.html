@@ -1,0 +1,156 @@
+<head>
+    <script src="https://www.gstatic.com/firebasejs/7.19.0/firebase-app.js"></script>
+    <script>
+      // Your web app's Firebase configuration
+      var firebaseConfig = {
+        apiKey: "AIzaSyDhkcM6AsGH0czq6NHt3rG2l1AfrqW42VQ",
+        authDomain: "esp01tempchecker.firebaseapp.com",
+        databaseURL: "https://esp01tempchecker.firebaseio.com",
+        projectId: "esp01tempchecker",
+        appId: "1:212293020179:web:814ef37713fae61bb6ede6"
+      };
+      // Initialize Firebase
+      firebase.initializeApp(firebaseConfig);
+    </script>
+  
+    <!-- The core Firebase JS SDK is always required and must be listed first -->
+    <script src="https://cdn.firebase.com/libs/firebaseui/3.5.2/firebaseui.js"></script>
+    <link type="text/css" rel="stylesheet" href="https://cdn.firebase.com/libs/firebaseui/3.5.2/firebaseui.css" />
+    <script src="https://www.gstatic.com/firebasejs/7.19.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.19.0/firebase-database.js"></script>
+    <!-- TODO: Add SDKs for Firebase products that you want to use
+       https://firebase.google.com/docs/web/setup#available-libraries -->
+  
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.min.js"
+      integrity="sha512-s+xg36jbIujB2S2VKfpGmlC3T5V2TF3lY48DX7u2r9XzGzgPsa6wTpOQA7J9iffvdeBN0q9tKzRxVxw1JviZPg=="
+      crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.bundle.min.js"
+      integrity="sha512-vBmx0N/uQOXznm/Nbkp7h0P1RfLSj0HQrFSzV8m7rOGyj30fYAOKHYvCNez+yM8IrfnW0TCodDEjRqf6fodf/Q=="
+      crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.min.css"
+      integrity="sha512-/zs32ZEJh+/EO2N1b0PEdoA10JkdC3zJ8L5FTiQu82LR9S/rOQNfQN7U59U9BC12swNeRAz3HSzIL2vpp4fv3w=="
+      crossorigin="anonymous" />
+  </head>
+  
+  <script>
+    var ui = new firebaseui.auth.AuthUI(firebase.auth());
+    var uiConfig = {
+      callbacks: {
+        signInSuccessWithAuthResult: function (authResult, redirectUrl) {
+          // User successfully signed in.
+          // Return type determines whether we continue the redirect automatically
+          // or whether we leave that to developer to handle.
+          return false;
+        },
+        uiShown: function () {
+          // The widget is rendered.
+          // Hide the loader.
+          document.getElementById('loader').style.display = 'none';
+        }
+      },
+      // Will use popup for IDP Providers sign-in flow instead of the default, redirect.
+      signInFlow: 'popup',
+      signInOptions: [
+        // Leave the lines as is for the providers you want to offer your users.
+        firebase.auth.GoogleAuthProvider.PROVIDER_ID,
+      ],
+    };
+  </script>
+  <h1>Monitoramento de temperatura</h1>
+  <div id="firebaseui-auth-container"></div>
+  <div class="chart-container" style="position: relative; height:40vh; width:80vw">
+    <h2 style="color: red;" id="errorMessage"></h2>
+  
+    <input type="date" id="data">
+    <input type="submit" onclick="newDate();">
+  
+    <canvas id="myChart">
+    </canvas>
+  </div>
+  
+  <script>
+    let myChart = null;
+    function makeGraph(data) {
+      data.sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
+  
+      let ctx = document.getElementById('myChart');
+  
+      if (myChart !== null) myChart.destroy()
+  
+      myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          datasets: [{
+            label: 'Temperature sensor 1',
+            data: data,
+            borderColor:
+              'rgba(255, 0, 0, 0.2)'
+            ,
+            borderWidth: 3,
+            fill: false
+          }
+          ]
+        },
+        options: {
+          scales: {
+            xAxes: [{
+              type: 'time',
+              time: {
+                displayFormats: {
+                  hour: 'H'
+                }
+              }
+            }]
+          }
+        }
+      });
+    }
+  
+    function newDate() {
+      let date = document.getElementById('data').value;
+      if (!date || date === undefined) return;
+  
+      getData(date);
+    }
+  
+    function getData(date) {
+      var database = firebase.database();
+      let data = []
+  
+      firebase.database().ref(`/temp/0/${date}`).once('value')
+        .then((snapshot) => {
+          if (!snapshot || snapshot === undefined) return null;
+  
+          Object.keys(snapshot.val()).forEach(hour => {
+            Object.keys(snapshot.val()[hour]).forEach(minute => {
+              data.push({
+                "t": (`${date}T${hour}:${minute}`),
+                "y": snapshot.val()[hour][minute]
+              })
+            })
+          })
+          makeGraph(data);
+        })
+        .catch(error => {
+          document.getElementById('errorMessage').innerHTML = "Usuario sem permissão de acesso.";
+  
+          return null;
+        });
+    }
+  
+    firebase.auth().onAuthStateChanged((user) => {
+      if (user) {
+        let today = new Date();
+        let dd = String(today.getDate()).padStart(2, '0');
+        let mm = String(today.getMonth() + 1).padStart(2, '0'); //January is 0!
+        let yyyy = today.getFullYear();
+  
+        let date = `${yyyy}-${mm}-${dd}`;
+  
+        getData(date);
+      } else {
+        ui.start('#firebaseui-auth-container', uiConfig);
+      }
+    });
+  
+  </script>
