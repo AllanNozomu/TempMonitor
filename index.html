@@ -63,7 +63,7 @@
   
     <input type="date" id="data">
     <input type="submit" onclick="newDate();">
-  
+    <input type="submit" style="float:right" onclick="signout();" value="Sair">
     <canvas id="myChart">
     </canvas>
   </div>
@@ -100,10 +100,27 @@
                   hour: 'H'
                 }
               }
+            }],
+            yAxes: [{
+                ticks: {
+                    suggestedMin: 15,
+                    suggestedMax: 35,
+                    stepSize : 1,
+                }
             }]
           }
         }
       });
+    }
+
+    function signout() {
+        firebase.auth().signOut().then(function() {
+            if (myChart !== null) myChart.destroy();
+            document.getElementById('errorMessage').innerHTML = "";
+            alert("Logout com sucesso");
+        }).catch(function(error) {
+            console.log(error);
+        });
     }
   
     function newDate() {
@@ -119,7 +136,9 @@
   
       firebase.database().ref(`/temp/0/${date}`).once('value')
         .then((snapshot) => {
-          if (!snapshot || snapshot === undefined) return null;
+          if (!snapshot || snapshot === undefined) {
+              alert("Data sem dados")
+          }
   
           Object.keys(snapshot.val()).forEach(hour => {
             Object.keys(snapshot.val()[hour]).forEach(minute => {
@@ -129,6 +148,7 @@
               })
             })
           })
+          document.getElementById('errorMessage').innerHTML = "";
           makeGraph(data);
         })
         .catch(error => {
