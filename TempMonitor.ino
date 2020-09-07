@@ -13,6 +13,7 @@
 
 #define SENSOR1_PORT 2
 #define SENSOR2_PORT 0
+#define LED_PORT 0
 
 DHTesp dhts[2];
 float temps[24];
@@ -29,6 +30,8 @@ void setup()
 {
   dhts[0].setup(SENSOR1_PORT, DHTesp::DHT22);
 //  dhts[1].setup(SENSOR2_PORT, DHTesp::DHT22);
+ 
+  pinMode(LED_PORT, OUTPUT);
 
   Serial.begin(115200);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -179,6 +182,27 @@ void print_info(int n) {
   Serial.println();
 }
 
+void ledStatus() {
+  if (error_counter[0]){
+    for (int i = 0; i < 3; ++i) {
+      digitalWrite(LED_PORT, HIGH);
+      delay(250);
+      digitalWrite(LED_PORT, LOW);
+      delay(250);
+    }
+  }
+  else
+    delay(1500);
+
+  if (error_counter[1]) {
+    digitalWrite(LED_PORT, HIGH);
+    delay(1500);
+    digitalWrite(LED_PORT, LOW);
+  }
+  else
+    delay(1500);
+}
+
 void loop() 
 {
   delay(dhts[0].getMinimumSamplingPeriod());
@@ -208,6 +232,6 @@ void loop()
   Serial.println("-----------");
   print_info(1);
   Serial.println("-----------------------------");
-  
-  delay(2000);
+
+  ledStatus();
 }
