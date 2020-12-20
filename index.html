@@ -64,27 +64,45 @@
     <input type="date" id="data">
     <input type="submit" onclick="newDate();">
     <input type="submit" style="float:right" onclick="signout();" value="Sair">
-    <canvas id="myChart">
+    <canvas id="tempChart">
+    </canvas>
+    <canvas id="humChart">
     </canvas>
   </div>
   
   <script>
-    let myChart = null;
-    function makeGraph(data) {
+    let tempChart = null;
+    let humChart = null;
+
+    function makeGraph(data, graphType) {
       data.sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
   
-      let ctx = document.getElementById('myChart');
+      let rgbaStr;
+      let graphLabel;
+
+      if (graphType === 0){
+        graphLabel = "Temperature Sensor";
+        rgbaStr = 'rgba(255, 0, 0, 0.2)';
+        yMin = 15;
+        yMax = 50;
+      } else {
+        graphLabel = "Humidity Sensor";
+        rgbaStr = 'rgba(0, 0, 255, 0.2)';
+        yMin = 10;
+        yMax = 100;
+      }
   
-      if (myChart !== null) myChart.destroy()
+      if (tempChart !== null) tempChart.destroy()
+      if (humChart !== null) humChart.destroy()
   
-      myChart = new Chart(ctx, {
+      chart = new Chart((graphType === 0 ? document.getElementById('tempChart') : document.getElementById('humChart')), {
         type: 'line',
         data: {
           datasets: [{
-            label: 'Temperature sensor 1',
+            label: graphLabel,
             data: data,
             borderColor:
-              'rgba(255, 0, 0, 0.2)'
+              rgbaStr
             ,
             borderWidth: 3,
             fill: false
@@ -103,8 +121,8 @@
             }],
             yAxes: [{
                 ticks: {
-                    suggestedMin: 15,
-                    suggestedMax: 35,
+                    suggestedMin: yMin,
+                    suggestedMax: yMax,
                     stepSize : 1,
                 }
             }]
@@ -115,7 +133,7 @@
 
     function signout() {
         firebase.auth().signOut().then(function() {
-            if (myChart !== null) myChart.destroy();
+            if (tempChart !== null) tempChart.destroy();
             document.getElementById('errorMessage').innerHTML = "";
             alert("Logout com sucesso");
         }).catch(function(error) {
@@ -132,10 +150,11 @@
   
     function getData(date) {
       var database = firebase.database();
-      let data = []
+      
   
-      firebase.database().ref(`/temp/0/${date}`).once('value')
+      firebase.database().ref(`/temp/2/${date}`).once('value')
         .then((snapshot) => {
+          let data = []
           if (!snapshot || snapshot === undefined) {
               alert("Data sem dados")
           }
@@ -149,7 +168,31 @@
             })
           })
           document.getElementById('errorMessage').innerHTML = "";
-          makeGraph(data);
+          makeGraph(data, 0);
+        })
+        .catch(error => {
+          document.getElementById('errorMessage').innerHTML = "Usuario sem permissão de acesso.";
+  
+          return null;
+        });
+
+        firebase.database().ref(`/hum/2/${date}`).once('value')
+        .then((snapshot) => {
+          let data = []
+          if (!snapshot || snapshot === undefined) {
+              alert("Data sem dados")
+          }
+  
+          Object.keys(snapshot.val()).forEach(hour => {
+            Object.keys(snapshot.val()[hour]).forEach(minute => {
+              data.push({
+                "t": (`${date}T${hour}:${minute}`),
+                "y": snapshot.val()[hour][minute]
+              })
+            })
+          })
+          document.getElementById('errorMessage').innerHTML = "";
+          makeGraph(data, 1);
         })
         .catch(error => {
           document.getElementById('errorMessage').innerHTML = "Usuario sem permissão de acesso.";
