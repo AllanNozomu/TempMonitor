@@ -155,6 +155,8 @@ void loop() {
   
       // Clear data counter
       temp_counter = 0;
+      // Clear data counter
+      hum_counter = 0;
   
       // update time
       previous_ts = ts;
